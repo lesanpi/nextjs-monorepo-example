@@ -1,0 +1,49 @@
+# .github/workflows/cloudbuild.yaml
+steps:
+  # Paso 1: Instalar dependencias y construir la aplicación
+  - name: node:22
+    id: build
+    entrypoint: sh
+    args:
+      - -c
+      - |
+        echo "Instalando dependencias..."
+        npm install --prefix=../.. --production=false
+        echo "Construyendo la aplicación..."
+        npx turbo run build --filter=nextjs-app
+    dir: apps/client # Ejecuta los comandos dentro de esta carpeta
+
+  # Paso 2: Empaquetar la aplicación construida
+  - name: gcr.io/cloud-builders/gsutil
+    id: package
+    args:
+      - cp
+      - -r
+      - .
+      - gs://motivapp-build-artifacts/client-build-$BUILD_ID
+    dir: apps/client # Empaqueta los archivos de esta carpeta
+
+  # Paso 3: Desplegar la aplicación (opcional, dependiendo de tu infraestructura)
+  - name: gcr.io/cloud-builders/gcloud
+    id: deploy
+    args:
+      - compute
+      - ssh
+      - my-instance
+      - --zone=us-central1-f
+      - --command="
+        cd /var/www/motivapp &&
+        sudo gsutil cp -r gs://motivapp-build-artifacts/client-build-$BUILD_ID . &&
+        sudo npm install --production &&
+        sudo npm start
+        "
+
+# Opciones de configuración
+options:
+  logging: CLOUD_LOGGING_ONLY # Usa los logs de Cloud Build
+
+# Artefactos de construcción
+artifacts:
+  objects:
+    location: gs://motivapp-build-artifacts/client-build-$BUILD_ID
+    paths: ['**/*']
